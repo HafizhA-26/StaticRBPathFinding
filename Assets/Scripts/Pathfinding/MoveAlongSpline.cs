@@ -1,3 +1,4 @@
+using Assets.Scripts.Pathfinding;
 using Pathfinding;
 using System;
 using System.Collections;
@@ -5,11 +6,11 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.Splines;
-using UnityEngine.U2D;
 
 public class MoveAlongSpline : MonoBehaviour
 {
     public SplineContainer splines;
+    public ResourceManager manager;
     public ColorAsset[] pathAssets;
     public ColorEnum[] pathTypes;
     public ColorEnum[] resource;
@@ -24,9 +25,8 @@ public class MoveAlongSpline : MonoBehaviour
     private List<ColorEnum> availResources = new List<ColorEnum>();
     private int currentSpline = 0;
     private float distancePercentage = 0f;
-    bool stopMove = false;
+    bool stopMove = true;
 
-    
 
     // Start is called before the first frame update
     void Start()
@@ -40,6 +40,7 @@ public class MoveAlongSpline : MonoBehaviour
             stopMove = true;
         }
         checkReverseSpline(starterNodeIndex, currentSpline);
+        ship.position = nodes[starterNodeIndex].position;
     }
 
     // Update is called once per frame
@@ -47,7 +48,7 @@ public class MoveAlongSpline : MonoBehaviour
     {
         if(!stopMove)
         {
-            distancePercentage += speed * Time.deltaTime / splines.CalculateLength();
+            distancePercentage += speed * Time.deltaTime / splines.CalculateLength(currentSpline);
             Vector3 currPos = splines.EvaluatePosition(currentSpline, distancePercentage);
             ship.position = currPos;
             if(distancePercentage > 1f)
@@ -55,7 +56,7 @@ public class MoveAlongSpline : MonoBehaviour
                 
                 int currNodeIndex = nodeOfKnot[new SplineKnotIndex(currentSpline, 1)];
                 availResources.RemoveAt(0);
-                if(currNodeIndex != finishNodeIndex && availResources.Count > 0)
+                if(availResources.Count > 0)
                 {
                     currentSpline = getNextSpline(currNodeIndex);
                     if(currentSpline > -1)
@@ -65,10 +66,10 @@ public class MoveAlongSpline : MonoBehaviour
                     }
                     else {
                         stopMove = true;
-                        Debug.Log("Berhasil");
+                        Debug.Log("Gagal");
                     }
 
-                }else if(currNodeIndex == finishNodeIndex)
+                }else if(currNodeIndex == finishNodeIndex && availResources.Count == 0)
                 {
                     stopMove = true;
                     Debug.Log("Berhasil");
@@ -76,6 +77,8 @@ public class MoveAlongSpline : MonoBehaviour
                 else
                 {
                     stopMove = true;
+                    ship.position = nodes[starterNodeIndex].position;
+                    manager.ClearResources();
                     Debug.Log("Gagal");
                 }
                 
@@ -104,6 +107,7 @@ public class MoveAlongSpline : MonoBehaviour
                     {
                         // Add corresponds node of knots
                         nodeOfKnot.Add(new SplineKnotIndex(i, j), nodeIndex);
+
                         // Find coresponds node neighbour   
                         if (!nodeNeighbourSplines.ContainsKey(nodeIndex))
                         {
@@ -137,7 +141,10 @@ public class MoveAlongSpline : MonoBehaviour
         SplineKnotIndex splineKnotIndex = new SplineKnotIndex(splineIndex, 1);
         if(nodeOfKnot[splineKnotIndex] == nodeIndex)
         {
-            splines.Splines[splineIndex].Knots = splines.Splines[splineIndex].Knots.Reverse();
+            SplineUtility.ReverseFlow(splines, splineIndex);
+            int reversedNode = nodeOfKnot[splineKnotIndex];
+            nodeOfKnot[splineKnotIndex] = nodeOfKnot[new SplineKnotIndex(splineIndex, 0)];
+            nodeOfKnot[new SplineKnotIndex(splineIndex, 0)] = reversedNode;
         }
 
     }
@@ -145,6 +152,23 @@ public class MoveAlongSpline : MonoBehaviour
     private Vector3 worldToSplinePosition(Vector3 position)
     {
         return new Vector3(position.x - transform.position.x, position.y - transform.position.y, 0);
+    }
+    public void StartMove()
+    {
+        if(manager.Resource.Count != manager.MaxResource)
+        {
+            Debug.Log("Belum Semua Resource Terpakai");
+            return;
+        }
+        resource = manager.Resource.ToArray();
+        availResources = resource.ToList();
+        currentSpline = getNextSpline(starterNodeIndex);
+        if (currentSpline == -1)
+        {
+            stopMove = true;
+        }
+        checkReverseSpline(starterNodeIndex, currentSpline);
+        stopMove = false;
     }
 
     private void InstatiatePathAsset()
@@ -154,7 +178,6 @@ public class MoveAlongSpline : MonoBehaviour
             float splineLength = splines.CalculateLength(i);
             int numAssets = (int) Math.Round(splineLength);
             float incPercentage = 1 / splineLength;
-            Debug.Log("Spline ke-" + i + ", panjangnya : " + splineLength + " jumlah asset: "+numAssets);
             GameObject assetToUse = new GameObject();
             for (global::System.Int32 j = 0; j < pathAssets.Length; j++)
             {
@@ -174,10 +197,5 @@ public class MoveAlongSpline : MonoBehaviour
             }
         }
     }
-    [Serializable]
-    public class ColorAsset
-    {
-        public ColorEnum color;
-        public GameObject pathAssets;
-    }
+    
 }
